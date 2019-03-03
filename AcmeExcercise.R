@@ -8,7 +8,7 @@ library(scales) # Para usar la función percent usada en la detección de valore
 library(caret) # Para crear particiones de datos (train / test)
 library(corrplot) # Para dibujar la matriz de correlaciones
 library(ggplot2)
-library(GGally) # para hacer un ggpairs
+#library(GGally) # para hacer un ggpairs
 
 
 ##################################################################################
@@ -52,11 +52,11 @@ Acme_data$income[which(Acme_data$income == 0)] <- NA
 Acme_data$handsetAge[which(Acme_data$handsetAge < 0)] <- NA
 
 Acme_data$occupation = factor(Acme_data$occupation)
-Acme_data$children = factor(Acme_data$children)
-Acme_data$smartPhone = factor(Acme_data$smartPhone)
+Acme_data$children = factor(Acme_data$children, levels = c("TRUE", "FALSE"), labels = c("true", "false"))
+Acme_data$smartPhone = factor(Acme_data$smartPhone, levels = c("TRUE", "FALSE"), labels = c("true", "false"))
 Acme_data$creditRating = factor(Acme_data$creditRating)
-Acme_data$homeOwner = factor(Acme_data$homeOwner)
-Acme_data$churn = factor(Acme_data$churn)
+Acme_data$homeOwner = factor(Acme_data$homeOwner, levels = c("TRUE", "FALSE"), labels = c("true", "false"))
+Acme_data$churn = factor(Acme_data$churn, levels = c("TRUE", "FALSE"), labels = c("true", "false"))
 
 view(dfSummary(Acme_data))# Ver el dataFrame después de los ajustes
 
@@ -110,11 +110,27 @@ df_training <- slice(New_Acme, inTraining)
 df_testing <- slice(New_Acme, -inTraining)
 # view(dfSummary(df_training)) # Visualizar descriptivos de Training
 
-##
+# Creo dos datasets a partir de training para dividir en ellos las variables correladas y comparar diferentes modelos
+#df_trainingA <- df_training[,-c(9,10)]
+#df_trainingB <- df_training[,-c(12,16,17)]
+
 ##################################################################################
 ##################################################################################
 #3. Transformaciones
+# Aplicamos una transformación a las variables numéricas antes de modelar
 
+numeric.vars<- c("numHandsets","handsetAge","currentHandsetPrice", "avgBill", 
+                   "avgMins", "avgrecurringCharge", "avgOverBundleMins", "avgRoamCalls", 
+                   "callMinutesChangePct","billAmountChangePct",
+                   "avgReceivedMins", "avgOutCalls", "avgInCalls", "peakOffPeakRatio", 
+                   "peakOffPeakRatioChangePct","avgDroppedCalls", "lifeTime",
+                   "lastMonthCustomerCareCalls","numRetentionCalls","numRetentionOffersAccepted",
+                   "newFrequentNumbers")
+
+#transformed.training<- df_training%>%
+#  mutate_at(vars(numeric.vars),funs("logMin"=log(1+(.))))
+
+#view(dfSummary(transformed.training))
 
 ##################################################################################
 ##################################################################################
@@ -123,11 +139,30 @@ df_testing <- slice(New_Acme, -inTraining)
 
 ##4.1.Modelo 1: Regresión logística
 
+glm1 = glm(churn ~ numHandsets+handsetAge+currentHandsetPrice+ avgBill+ 
+             avgMins+ avgrecurringCharge+ avgOverBundleMins+ avgRoamCalls+ 
+             callMinutesChangePct+billAmountChangePct+
+             avgReceivedMins+ avgOutCalls+ avgInCalls+ peakOffPeakRatio+ 
+             peakOffPeakRatioChangePct+avgDroppedCalls+ lifeTime+
+             lastMonthCustomerCareCalls+numRetentionCalls+numRetentionOffersAccepted+
+             newFrequentNumbers, 
+           family = binomial(link = logit),data = df_training)
+summary(glm1)
+
+round(exp(cbind(Estimate = coef(glm1), confint(glm1))), 2)
 
 
+# Segundo modelo anidado del primero omitiendo predictores NO significativos
+glm2 = update(glm1, . ~ . - numHandsets - handsetAge - avgOverBundleMins - avgRoamCalls - avgReceivedMins - avgOutCalls 
+              -avgInCalls - peakOffPeakRatio - peakOffPeakRatioChangePct - avgDroppedCalls - lastMonthCustomerCareCalls
+              -numRetentionOffersAccepted -newFrequentNumbers) # Eliminamos dos predictores
+summary(glm2)
 
+# Compara los dos modelos
+anova(glm1, glm2, test = "Chisq")
 
+#Ajuste del modelo y diagnóstico
+head(predict(glm1))#Predicción de valores del modelo
+head(predict(glm1, type = "response")) # Probabilidades en escala de la salida
 
-
-
-
+#Predicción sobre datos de testing. Evaluación del modelo
