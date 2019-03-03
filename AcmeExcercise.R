@@ -1,10 +1,14 @@
-#library(readr) # Lectura de datos
-library(VIM) # Para leer datos (fread) y dibujar el patrón leer datos faltantes
+library(readr) # Lectura de datos
+library(VIM) # Para dibujar el patrón leer datos faltantes
 library(Hmisc)# Para usar la función describe de los datos
 library(dplyr) # Dividir el conjunto de datos en train y test
 library(summarytools) # Resumen descriptivo de las variables
 library(tidyr) # Función gather y otras para filtrar data sets
 library(scales) # Para usar la función percent usada en la detección de valores nulos
+library(caret) # Para crear particiones de datos (train / test)
+library(corrplot) # Para dibujar la matriz de correlaciones
+library(ggplot2)
+library(GGally) # para hacer un ggpairs
 
 
 ##################################################################################
@@ -12,8 +16,11 @@ library(scales) # Para usar la función percent usada en la detección de valore
 
 # 1. Lectura de Datos
 
-Acme_data <- fread("C:/Users/DORAFA/Documents/InteligenciaNegocio/AcmeExcercise/data/ACMETelephoneABT.csv", 
-                   drop="customer",na.strings="")
+
+Acme_data <- read_csv("InteligenciaNegocio/AcmeExcercise/data/ACMETelephoneABT.csv", 
+                             col_types = cols(customer = col_skip()))
+
+class(Acme_data)
 default.stringsAsFactors()
 
 ## 1.1. Principales Descriptivos
@@ -67,14 +74,32 @@ Faltantes <- Acme_data %>% summarize_all(funs((sum(is.na(.)) / length(.)))) %>%
   mutate(value=percent(value))
 
 Faltantes # Tabla de columnas con datos faltantes superiores al 25%
-DropCols <- Faltantes$key[1:5] # Obtendo los nombres de las columnas con datos faltantes superiores al 25%
-#x <-data.frame(DropCols[1:5])
+#DropCols <- Faltantes$key[1:5] # Obtendo los nombres de las columnas con datos faltantes superiores al 25%
 
-# Omitimos variables cuyos faltantes superen al > 25% : occupation, regionType y age
-
-New_Acme <- subset(Acme_data, -c()) 
+# Omitimos variables cuyos faltantes superen al > 25% : occupation, regionType, marriageStatus, income y age
+New_Acme <- subset(Acme_data, select =-c(1,2,3,4,6)) 
 New_Acme<- na.omit(New_Acme) # Elimino 12 registros con campos faltantes inferior a 0,12%
-# view(dfSummary(New_Acme)) # Para visualizar el nuevo data set despu´s de omitir datos faltantes
+view(dfSummary(New_Acme)) # Para visualizar el nuevo data set despu´s de omitir datos faltantes
+
+# 1.3. Análisis de correlaciones entre variables
+num = New_Acme[, -c(1,4,6,7,8,27)]
+CorMatrix = round(cor(x = num, method = "pearson"), 3)
+corrplot(CorMatrix, method="circle")
+CorMatrix
+
+# Se ven correlaciones superiores a 0,7 entre:
+# avgBill - avgOverBundleMins: 0,77
+# avgBill - avgMins: 0,72
+# avgMins - avgReceivedMins: 0,83
+# avgMins - avgOutCalls: 0,70
+
+# Podemos visualizar las correlaciones identificadas
+
+correladas <- New_Acme[,c(9,10,12,16,17,27)]
+
+correladas %>%
+  na.omit() %>%
+  ggpairs(columns = 1:6, ggplot2::aes(colour=churn))
 
 ##################################################################################
 ##################################################################################
@@ -84,6 +109,19 @@ inTraining <- createDataPartition(pull(New_Acme, churn), p = .7, list = FALSE, t
 df_training <- slice(New_Acme, inTraining)
 df_testing <- slice(New_Acme, -inTraining)
 # view(dfSummary(df_training)) # Visualizar descriptivos de Training
+
+##
+##################################################################################
+##################################################################################
+#3. Transformaciones
+
+
+##################################################################################
+##################################################################################
+#4. Modelos
+#Creamos dos datasets, para hacer dos modelos diferentes
+
+##4.1.Modelo 1: Regresión logística
 
 
 
