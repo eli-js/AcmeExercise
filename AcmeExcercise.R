@@ -8,7 +8,9 @@ library(scales) # Para usar la función percent usada en la detección de valore
 library(caret) # Para crear particiones de datos (train / test)
 library(corrplot) # Para dibujar la matriz de correlaciones
 library(ggplot2)
-#library(GGally) # para hacer un ggpairs
+library(GGally) # para hacer un ggpairs
+library(ROCR) #Para graficar la curva ROC
+library(vcd) #Matriz de confusión
 
 
 ##################################################################################
@@ -20,7 +22,6 @@ library(ggplot2)
 Acme_data <- read_csv("InteligenciaNegocio/AcmeExcercise/data/ACMETelephoneABT.csv", 
                              col_types = cols(customer = col_skip()))
 
-class(Acme_data)
 default.stringsAsFactors()
 
 ## 1.1. Principales Descriptivos
@@ -127,6 +128,14 @@ numeric.vars<- c("numHandsets","handsetAge","currentHandsetPrice", "avgBill",
                    "lastMonthCustomerCareCalls","numRetentionCalls","numRetentionOffersAccepted",
                    "newFrequentNumbers")
 
+#Revisamos los factores, tratados como dummies variables:
+contrasts(df_training$children)
+contrasts(df_training$smartPhone)
+contrasts(df_training$creditRating)
+contrasts(df_training$homeOwner)
+contrasts(df_training$creditCard)
+
+
 #transformed.training<- df_training%>%
 #  mutate_at(vars(numeric.vars),funs("logMin"=log(1+(.))))
 
@@ -135,34 +144,67 @@ numeric.vars<- c("numHandsets","handsetAge","currentHandsetPrice", "avgBill",
 ##################################################################################
 ##################################################################################
 #4. Modelos
-#Creamos dos datasets, para hacer dos modelos diferentes
 
-##4.1.Modelo 1: Regresión logística
+##4.1.Modelo 1: Regresión logística con todas las variables numéricas
 
-glm1 = glm(churn ~ numHandsets+handsetAge+currentHandsetPrice+ avgBill+ 
-             avgMins+ avgrecurringCharge+ avgOverBundleMins+ avgRoamCalls+ 
-             callMinutesChangePct+billAmountChangePct+
-             avgReceivedMins+ avgOutCalls+ avgInCalls+ peakOffPeakRatio+ 
-             peakOffPeakRatioChangePct+avgDroppedCalls+ lifeTime+
-             lastMonthCustomerCareCalls+numRetentionCalls+numRetentionOffersAccepted+
-             newFrequentNumbers, 
-           family = binomial(link = logit),data = df_training)
+glm1 = glm(churn ~ ., family = binomial(link = logit),data = df_training)
 summary(glm1)
 
-round(exp(cbind(Estimate = coef(glm1), confint(glm1))), 2)
-
-
 # Segundo modelo anidado del primero omitiendo predictores NO significativos
-glm2 = update(glm1, . ~ . - numHandsets - handsetAge - avgOverBundleMins - avgRoamCalls - avgReceivedMins - avgOutCalls 
-              -avgInCalls - peakOffPeakRatio - peakOffPeakRatioChangePct - avgDroppedCalls - lastMonthCustomerCareCalls
-              -numRetentionOffersAccepted -newFrequentNumbers) # Eliminamos dos predictores
+glm2 = update(glm1, . ~ . - avgOverBundleMins - avgRoamCalls - avgReceivedMins 
+              -avgInCalls - peakOffPeakRatioChangePct - avgDroppedCalls - lastMonthCustomerCareCalls
+              -numRetentionOffersAccepted -newFrequentNumbers -children -creditCard) # Eliminamos dos predictores
 summary(glm2)
+
+# Anova: nos permite hacer un análisis de la desviación
+anova (glm2, test="Chisq")
+
 
 # Compara los dos modelos
 anova(glm1, glm2, test = "Chisq")
 
+#Podemos exponenciar los coeficientes para interpretarlos como ODDS-Ratio
+# odds ratios and 95% CI
+round(exp(cbind(ODDS = coef(glm2), confint(glm2))), 2)
+
 #Ajuste del modelo y diagnóstico
-head(predict(glm1))#Predicción de valores del modelo
+# type = "response" devuelve las predicciones en forma de probabilidad en lugar de en log_ODDs
+head(predict(glm1))#Predicción de valores del modelo1
 head(predict(glm1, type = "response")) # Probabilidades en escala de la salida
 
+head(predict(glm2))#Predicción de valores del modelo2
+head(predict(glm2, type = "response")) # Probabilidades en escala de la salida
+
+
+# Diferencia de residuos
+dif_residuos <- glm2$null.deviance - glm2$deviance
+
+# Grados libertad
+df <- glm2$df.null - glm2$df.residual
+
+# p-value
+p_value <- pchisq(q = dif_residuos,df = df, lower.tail = FALSE)
+
+paste("Diferencia de residuos:", round(dif_residuos, 4))
+paste("Grados de libertad:", df)
+paste("p-value:", p_value)
+
+# Ajuste del modelo
+
+
+
+
 #Predicción sobre datos de testing. Evaluación del modelo
+
+#Para este estudio se va a emplear un threshold de 0.5. Si la probabilidad predicha de abandonar 
+# la compañía es > 0.5 se asigna al nivel 1 (sí abandona), si es menor se asigna al nivel 0 (no abandona).
+
+predicciones <- ifelse(test = glm2$fitted.values > 0.5, yes = 1, no = 0)
+matriz_confusion <- table(glm2$model$churn, predicciones,
+                          dnn = c("observaciones", "predicciones"))
+matriz_confusion
+mosaic(matriz_confusion, shade = T, colorize = T, gp = gpar(fill = matrix(c("green3", "red2", "red2", "green3"), 2, 2)))
+
+
+
+
